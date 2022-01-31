@@ -1,0 +1,29 @@
+version: "3"
+services:
+  postgrest:
+    image: postgrest/postgrest:v9.0.0
+    container_name: postgrest
+    environment:
+      PGRST_DB_URI: ${DATABASE_URL}
+      PGRST_DB_SCHEMA: "api"
+      PGRST_DB_ANON_ROLE: "anon"
+      PGRST_DB_MAX_ROWS: 100
+
+  migrations:
+    image: arshsingh/sanctions
+    build: .
+    container_name: migrations
+    restart: "no"
+    env_file: .env
+    entrypoint: ["dbmate"]
+    command: ["--no-dump-schema", "--wait", "--wait-timeout", "10s", "up"]
+
+  worker:
+    image: arshsingh/sanctions
+    build: .
+    container_name: worker
+    restart: always
+    env_file: .env
+    entrypoint: ["python", "worker/cli.py"]
+    command: ["start"]
+    profiles: ["production"]

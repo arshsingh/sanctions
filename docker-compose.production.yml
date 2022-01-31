@@ -1,0 +1,7 @@
+version: "3"
+services:
+  postgres:
+    labels:
+      traefik.enable: true
+      traefik.http.routers.postgrest.rule: Host(`${API_HOST}`)
+      traefik.http.routers.postgrest.tls: true

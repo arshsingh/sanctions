@@ -1,0 +1,8 @@
+docker-compose*.yml
+Dockerfile
+
+.env
+.git
+env.def
+README.md
+Makefile

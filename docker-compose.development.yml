@@ -1,0 +1,29 @@
+version: "3"
+services:
+  postgres:
+    image: postgres:14-alpine
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./db/roles.sql:/docker-entrypoint-initdb.d/roles.sql
+
+  postgrest:
+    depends_on:
+      - postgres
+    ports:
+      - 3000:3000
+
+  worker:
+    <<: &worker
+      depends_on:
+        - postgres
+      volumes:
+        - ./:/src
+
+  migrations:
+    <<: *worker
+
+volumes:
+  pg-data:
