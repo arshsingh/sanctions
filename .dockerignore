@@ -3,6 +3,7 @@ Dockerfile
 
 .env
 .git
+.github
 env.def
 README.md
 Makefile

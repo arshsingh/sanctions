@@ -17,6 +17,7 @@ services:
 
   worker:
     <<: &worker
+      build: .
       depends_on:
         - postgres
       volumes:

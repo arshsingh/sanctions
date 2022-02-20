@@ -25,7 +25,7 @@ make run
 
 To import some test data:
 ```sh
-make import-test-data
+make test-data
 ```
 
 Check `Makefile` for more commands (for e.g. generating migrations)
