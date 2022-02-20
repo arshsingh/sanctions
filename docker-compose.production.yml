@@ -1,7 +1,14 @@
 version: "3"
 services:
-  postgres:
+  postgrest:
     labels:
       traefik.enable: true
-      traefik.http.routers.postgrest.rule: Host(`${API_HOST}`)
-      traefik.http.routers.postgrest.tls: true
+      traefik.http.routers.sanctions-api.rule: Host(`${API_HOST}`)
+      traefik.http.routers.sanctions-api.tls: true
+      traefik.http.services.sanctions-api.loadbalancer.server.port: 3000
+      traefik.http.routers.sanctions-api.tls.certresolver: lets-encrypt
+
+networks:
+  default:
+    name: main
+    external: true
