@@ -1,29 +1,47 @@
 import os
+from datetime import date
+from typing import TypedDict
 
-import psycopg2
-from pypika import Table, PostgreSQLQuery as Query
-
-
-sanctions = Table('sanctions', schema='internal')
+import psycopg
 
 
-def create_sanctions(entries):
-    """
-    Insert sanctions data into the DB
-    """
-    conn = psycopg2.connect(os.getenv('DATABASE_URL'))
+class Sanction(TypedDict):
+    source_id: str
+    target_type: str
+    names: list[str]
+    positions: list[str]
+    listed_on: date | str | None
+    remarks: str | None
+
+
+_INSERT_SANCTION_SQL = """
+    INSERT INTO internal.sanctions
+        (source, source_id, target_type, names, positions, listed_on, remarks)
+    VALUES
+        (%(source)s, %(source_id)s, %(target_type)s, %(names)s, %(positions)s, %(listed_on)s, %(remarks)s)
+    ON CONFLICT (source, source_id) DO NOTHING
+"""
+
+_UPSERT_SOURCE_STATUS_SQL = """
+    INSERT INTO internal.source_status (source, synced_at) VALUES (%s, now())
+    ON CONFLICT (source) DO UPDATE SET synced_at = EXCLUDED.synced_at
+"""
+
+
+def create_sanctions(source: str, entries: list[Sanction]) -> None:
+    """Insert sanctions for the given source into the DB."""
     if not entries:
         return
 
-    with conn.cursor() as c:
-        cols = entries[0].keys()
-        c.execute(str(
-            Query.into(sanctions)
-                .columns(*cols)
-                .insert(*[tuple(e[c] for c in cols) for e in entries])
-                .on_conflict(sanctions.source, sanctions.source_id)
-                .do_nothing()
-        ))
-        conn.commit()
+    rows = [{**e, "source": source} for e in entries]
 
-    conn.close()
+    with psycopg.connect(os.getenv("DATABASE_URL")) as conn:
+        with conn.cursor() as c:
+            c.executemany(_INSERT_SANCTION_SQL, rows)
+
+
+def update_source_status(source: str) -> None:
+    """Record a successful sync for the given source."""
+    with psycopg.connect(os.getenv("DATABASE_URL")) as conn:
+        with conn.cursor() as c:
+            c.execute(_UPSERT_SOURCE_STATUS_SQL, (source,))

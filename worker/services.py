@@ -1,13 +1,34 @@
-import os
-
 import logging
+import os
+from typing import Callable
+
 import requests
 import xmltodict
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-from db import create_sanctions
+from db import Sanction
 
 
-def _eu_entry_to_db_fields(entry):
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=30),
+    retry=retry_if_exception_type(requests.RequestException),
+    reraise=True,
+    before_sleep=before_sleep_log(logging.getLogger(), logging.WARNING),
+)
+def _fetch(url):
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    return r
+
+
+def _eu_entry_to_db_fields(entry) -> Sanction:
     """
     Transform EU entry data to the dict representation of sanction DB row
     """
@@ -21,7 +42,6 @@ def _eu_entry_to_db_fields(entry):
         aliases = [aliases]
 
     return {
-        'source': 'eu',
         'source_id': entry['@euReferenceNumber'],
         'target_type': target_types[entry['subjectType']['@code']],
         'names': list(filter(None, {a['@wholeName'] for a in aliases})),
@@ -31,7 +51,7 @@ def _eu_entry_to_db_fields(entry):
     }
 
 
-def _unsc_entry_to_db_fields(entry, target_type):
+def _unsc_entry_to_db_fields(entry, target_type) -> Sanction:
     """
     Transform UNSC entry data to the dict representation of sanction DB row
     """
@@ -63,7 +83,6 @@ def _unsc_entry_to_db_fields(entry, target_type):
     positions = [p['VALUE'] for p in positions]
 
     return {
-        'source': 'unsc',
         'source_id': entry['REFERENCE_NUMBER'],
         'target_type': target_type,
         'names': names,
@@ -73,7 +92,7 @@ def _unsc_entry_to_db_fields(entry, target_type):
     }
 
 
-def _ofac_entry_to_db_fields(entry):
+def _ofac_entry_to_db_fields(entry) -> Sanction:
     """
     Transform OFAC entry data to the dict representation of sanction DB row
     """
@@ -89,7 +108,6 @@ def _ofac_entry_to_db_fields(entry):
         ))
 
     return {
-        'source': 'ofac',
         'source_id': entry['uid'],
         'target_type': entry['sdnType'].lower(),
         'names': names,
@@ -99,58 +117,49 @@ def _ofac_entry_to_db_fields(entry):
     }
 
 
-def fetch_eu_data():
-    """
-    Fetch data from EU Financial Sanctions File
-    """
+def fetch_eu_data() -> list[Sanction]:
+    """Fetch data from EU Financial Sanctions File."""
     token = os.getenv('EU_SERVICES_TOKEN', '')
     if not token:
-        logging.error('EU services token not defined. Skipping EU FSF data fetch')
-        return
+        raise RuntimeError('EU_SERVICES_TOKEN is not set')
 
     logging.info('starting EU data sync')
 
-    r = requests.get(
-        'https://webgate.ec.europa.eu/europeaid/fsd/fsf/public/files/'
+    r = _fetch(
+        'https://webgate.ec.europa.eu/fsd/fsf/public/files/'
         f'xmlFullSanctionsList_1_1/content?token={token}'
     )
-    if r.status_code != 200:
-        logging.error(f'EU data fetch failed with status: {r.status_code}')
-        return
-
-    entries = [
+    return [
         _eu_entry_to_db_fields(e)
         for e in xmltodict.parse(r.text)['export']['sanctionEntity']
     ]
-    create_sanctions(entries)
 
 
-def fetch_unsc_data():
+def fetch_unsc_data() -> list[Sanction]:
     logging.info('starting UNSC data sync')
 
-    r = requests.get('https://scsanctions.un.org/resources/xml/en/consolidated.xml')
-    if r.status_code != 200:
-        logging.error(f'UNSC data fetch failed with status: {r.status_code}')
-        return
+    r = _fetch('https://scsanctions.un.org/resources/xml/en/consolidated.xml')
 
     data = xmltodict.parse(r.text)['CONSOLIDATED_LIST']
 
-    individuals = [_unsc_entry_to_db_fields(e, 'individual') for e in data['INDIVIDUALS']['INDIVIDUAL']]
-    create_sanctions(individuals)
-
-    entities = [_unsc_entry_to_db_fields(e, 'entity') for e in data['ENTITIES']['ENTITY']]
-    create_sanctions(entities)
+    rows = [_unsc_entry_to_db_fields(e, 'individual') for e in data['INDIVIDUALS']['INDIVIDUAL']]
+    rows += [_unsc_entry_to_db_fields(e, 'entity') for e in data['ENTITIES']['ENTITY']]
+    return rows
 
 
-def fetch_ofac_data():
+def fetch_ofac_data() -> list[Sanction]:
     logging.info('starting OFAC data sync')
 
-    r = requests.get('https://www.treasury.gov/ofac/downloads/sdn.xml')
-    if r.status_code != 200:
-        logging.error(f'OFAC data fetch failed with status: {r.status_code}')
-        return
+    r = _fetch(
+        'https://sanctionslistservice.ofac.treas.gov/api/publicationpreview/exports/sdn.xml'
+    )
 
     data = xmltodict.parse(r.text)['sdnList']
+    return [_ofac_entry_to_db_fields(e) for e in data['sdnEntry']]
 
-    entities = [_ofac_entry_to_db_fields(e) for e in data['sdnEntry']]
-    create_sanctions(entities)
+
+SOURCES: dict[str, Callable[[], list[Sanction]]] = {
+    'ofac': fetch_ofac_data,
+    'unsc': fetch_unsc_data,
+    'eu':   fetch_eu_data,
+}

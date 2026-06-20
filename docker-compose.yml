@@ -1,7 +1,6 @@
-version: "3"
 services:
   postgrest:
-    image: postgrest/postgrest:v9.0.0
+    image: postgrest/postgrest:v12.2.12
     container_name: postgrest
     environment:
       PGRST_DB_URI: ${DATABASE_URL}

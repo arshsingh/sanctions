@@ -61,6 +61,16 @@ CREATE TABLE internal.sanctions (
 
 
 --
+-- Name: source_status; Type: TABLE; Schema: internal; Owner: -
+--
+
+CREATE TABLE internal.source_status (
+    source text NOT NULL,
+    synced_at timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: sanctions; Type: VIEW; Schema: api; Owner: -
 --
 
@@ -75,6 +85,16 @@ CREATE VIEW api.sanctions AS
     sanctions.listed_on,
     sanctions.created_at
    FROM internal.sanctions;
+
+
+--
+-- Name: sources; Type: VIEW; Schema: api; Owner: -
+--
+
+CREATE VIEW api.sources AS
+ SELECT source_status.source,
+    source_status.synced_at
+   FROM internal.source_status;
 
 
 --
@@ -115,6 +135,14 @@ ALTER TABLE ONLY internal.sanctions
 
 
 --
+-- Name: source_status source_status_pkey; Type: CONSTRAINT; Schema: internal; Owner: -
+--
+
+ALTER TABLE ONLY internal.source_status
+    ADD CONSTRAINT source_status_pkey PRIMARY KEY (source);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -132,4 +160,5 @@ ALTER TABLE ONLY public.schema_migrations
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20220128221810');
+    ('20220128221810'),
+    ('20260609000000');

@@ -1,19 +1,21 @@
-import argparse
 import logging
 import time
 
 import schedule
 
-from services import fetch_eu_data, fetch_ofac_data, fetch_unsc_data
+from db import create_sanctions, update_source_status
+from services import SOURCES
 
 
 def sync_data():
-    logging.info('staring data sync')
+    logging.info('starting data sync')
 
-    # TODO: make them independent; if one fails, don't stop the others
-    fetch_eu_data()
-    fetch_ofac_data()
-    fetch_unsc_data()
+    for name, fetch in SOURCES.items():
+        try:
+            create_sanctions(name, fetch())
+            update_source_status(name)
+        except Exception:
+            logging.exception('%s sync failed', name)
 
 
 def start(once=False):
@@ -21,7 +23,7 @@ def start(once=False):
         sync_data()
         return
 
-    logging.info('staring worker')
+    logging.info('starting worker')
 
     schedule.every().day.at('00:00').do(sync_data)
 

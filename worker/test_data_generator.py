@@ -1,8 +1,9 @@
 import random
+from collections import defaultdict
 
 from faker import Faker
 
-from db import create_sanctions
+from db import Sanction, create_sanctions
 
 
 fake = Faker([
@@ -12,22 +13,21 @@ fake = Faker([
 
 
 def generate_sanctions(rows=100):
-    entries = []
-    for i in range(1, rows):
-        entries.append(
-            {
-                'source': random.choice(['eu', 'unsc', 'ofac']),
-                'source_id': fake.swift8(),
-                'target_type': random.choice(['individual', 'vessel', 'aircraft', 'entity']),
-                'names': [fake.name() for _ in range(random.randint(1, 4))],
-                'positions': [fake.job() for _ in range(random.randint(0, 3))],
-                'listed_on': fake.date(),
-                'created_at': fake.date_time(),
-                'remarks': fake.text(),
-            }
-        )
+    by_source: dict[str, list[Sanction]] = defaultdict(list)
 
-    create_sanctions(entries)
+    for _ in range(rows):
+        source = random.choice(['eu', 'unsc', 'ofac'])
+        by_source[source].append({
+            'source_id': fake.swift8(),
+            'target_type': random.choice(['individual', 'vessel', 'aircraft', 'entity']),
+            'names': [fake.name() for _ in range(random.randint(1, 4))],
+            'positions': [fake.job() for _ in range(random.randint(0, 3))],
+            'listed_on': fake.date(),
+            'remarks': fake.text(),
+        })
+
+    for source, entries in by_source.items():
+        create_sanctions(source, entries)
 
 
 if __name__ == '__main__':
