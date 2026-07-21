@@ -6,6 +6,7 @@ Currently the following sources are used:
 - UN Security Council Sanctions
 - EU Financial Sanctions File
 - U.S. OFAC Specially Designated Nationals
+- Swiss SECO Consolidated Sanctions List
 
 Only basic fields (full names/aliases, timestamp, type etc.) are stored in the DB right now, even though
 the sources have more data available. If you'd like to add some more fields (or another source), feel free to open an

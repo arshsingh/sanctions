@@ -1,5 +1,6 @@
 import logging
 import os
+from itertools import product
 from typing import Callable
 
 import requests
@@ -117,6 +118,106 @@ def _ofac_entry_to_db_fields(entry) -> Sanction:
     }
 
 
+def _seco_as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _seco_xml_text(value):
+    if isinstance(value, dict):
+        return value.get('#text')
+    return value
+
+
+def _seco_name_to_strings(name) -> list[str]:
+    """Build complete names from SECO name parts and spelling variants."""
+    parts = _seco_as_list(name['name-part'])
+    parts = [
+        part for _, part in sorted(
+            enumerate(parts),
+            key=lambda item: int(item[1].get('@order', item[0] + 1)),
+        )
+    ]
+
+    names = [
+        ' '.join(filter(None, (_seco_xml_text(p.get('value')) for p in parts)))
+    ]
+
+    variant_keys = []
+    for part in parts:
+        for variant in _seco_as_list(part.get('spelling-variant')):
+            key = (variant.get('@lang'), variant.get('@script'))
+            if key not in variant_keys:
+                variant_keys.append(key)
+
+    for key in variant_keys:
+        values_by_part = []
+        for part in parts:
+            variants = [
+                _seco_xml_text(variant)
+                for variant in _seco_as_list(part.get('spelling-variant'))
+                if (variant.get('@lang'), variant.get('@script')) == key
+            ]
+            values_by_part.append(
+                list(filter(None, variants))
+                or [_seco_xml_text(part.get('value'))]
+            )
+
+        names.extend(
+            ' '.join(filter(None, values))
+            for values in product(*values_by_part)
+        )
+
+    return list(filter(None, dict.fromkeys(names)))
+
+
+def _seco_entry_to_db_fields(entry) -> Sanction:
+    if 'individual' in entry:
+        target_type = 'individual'
+        target = entry['individual']
+    elif 'entity' in entry:
+        target_type = 'entity'
+        target = entry['entity']
+    else:
+        target = entry['object']
+        target_type = target['@object-type']
+        if target_type not in ('aircraft', 'vessel'):
+            raise ValueError(f'unsupported SECO object type: {target_type}')
+
+    names = []
+    for identity in _seco_as_list(target['identity']):
+        for name in _seco_as_list(identity['name']):
+            names.extend(_seco_name_to_strings(name))
+
+    remarks = []
+    for field in ('justification', 'other-information'):
+        remarks.extend(
+            filter(None, map(_seco_xml_text, _seco_as_list(target.get(field))))
+        )
+
+    modifications = _seco_as_list(entry.get('modification'))
+    listed = next(
+        (m for m in modifications if m['@modification-type'] == 'listed'),
+        {},
+    )
+
+    return {
+        'source_id': entry['@ssid'],
+        'target_type': target_type,
+        'names': list(dict.fromkeys(names)),
+        'positions': [],
+        'remarks': '\n'.join(dict.fromkeys(remarks)) or None,
+        'listed_on': (
+            listed.get('@effective-date')
+            or listed.get('@publication-date')
+            or listed.get('@enactment-date')
+        ),
+    }
+
+
 def fetch_eu_data() -> list[Sanction]:
     """Fetch data from EU Financial Sanctions File."""
     token = os.getenv('EU_SERVICES_TOKEN', '')
@@ -158,8 +259,36 @@ def fetch_ofac_data() -> list[Sanction]:
     return [_ofac_entry_to_db_fields(e) for e in data['sdnEntry']]
 
 
+def fetch_seco_data() -> list[Sanction]:
+    """Fetch the Swiss SECO consolidated sanctions list."""
+    logging.info('starting SECO data sync')
+
+    r = _fetch(
+        'https://www.sesam.search.admin.ch/sesam-search-web/pages/'
+        'downloadXmlGesamtliste.xhtml?lang=en&action=downloadXmlGesamtlisteAction'
+    )
+
+    data = xmltodict.parse(r.text)['swiss-sanctions-list']
+    if data.get('@list-type') != 'whole-list':
+        raise ValueError('SECO response is not a consolidated whole list')
+
+    targets = _seco_as_list(data.get('target'))
+    if not targets:
+        raise ValueError('SECO response contains no targets')
+
+    return [
+        _seco_entry_to_db_fields(target)
+        for target in targets
+        if not any(
+            modification['@modification-type'] == 'de-listed'
+            for modification in _seco_as_list(target.get('modification'))
+        )
+    ]
+
+
 SOURCES: dict[str, Callable[[], list[Sanction]]] = {
     'ofac': fetch_ofac_data,
     'unsc': fetch_unsc_data,
     'eu':   fetch_eu_data,
+    'seco': fetch_seco_data,
 }

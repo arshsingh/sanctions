@@ -55,7 +55,7 @@ CREATE TABLE internal.sanctions (
     remarks text,
     listed_on date,
     created_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT sanctions_source_check CHECK ((source = ANY (ARRAY['ofac'::text, 'unsc'::text, 'eu'::text]))),
+    CONSTRAINT sanctions_source_check CHECK ((source = ANY (ARRAY['ofac'::text, 'unsc'::text, 'eu'::text, 'seco'::text]))),
     CONSTRAINT sanctions_target_type_check CHECK ((target_type = ANY (ARRAY['individual'::text, 'entity'::text, 'aircraft'::text, 'vessel'::text])))
 );
 
@@ -161,4 +161,5 @@ ALTER TABLE ONLY public.schema_migrations
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20220128221810'),
-    ('20260609000000');
+    ('20260609000000'),
+    ('20260721000000');
