@@ -132,6 +132,39 @@ def _seco_xml_text(value):
     return value
 
 
+def _seco_is_currently_listed(entry) -> bool:
+    """Return whether the latest effective modification leaves a target listed."""
+    modifications = _seco_as_list(entry.get('modification'))
+    dated_modifications = [
+        modification
+        for modification in modifications
+        if modification.get('@effective-date')
+    ]
+
+    if dated_modifications:
+        latest_effective_date = max(
+            modification['@effective-date']
+            for modification in dated_modifications
+        )
+        latest_modifications = [
+            modification
+            for modification in dated_modifications
+            if modification['@effective-date'] == latest_effective_date
+        ]
+        return not any(
+            modification['@modification-type'] == 'de-listed'
+            for modification in latest_modifications
+        )
+
+    # Legacy modifications may predate SECO's system and have no dates. In that
+    # ambiguous case, exclude targets with a de-listing rather than importing a
+    # potentially inactive sanction.
+    return not any(
+        modification['@modification-type'] == 'de-listed'
+        for modification in modifications
+    )
+
+
 def _seco_name_to_strings(name) -> list[str]:
     """Build complete names from SECO name parts and spelling variants."""
     parts = _seco_as_list(name['name-part'])
@@ -279,10 +312,7 @@ def fetch_seco_data() -> list[Sanction]:
     return [
         _seco_entry_to_db_fields(target)
         for target in targets
-        if not any(
-            modification['@modification-type'] == 'de-listed'
-            for modification in _seco_as_list(target.get('modification'))
-        )
+        if _seco_is_currently_listed(target)
     ]
 
 
