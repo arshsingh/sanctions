@@ -1,4 +1,4 @@
-.PHONY: build run psql test-data migrate migration
+.PHONY: build run psql test test-data migrate migration
 
 build:
 	docker-compose build
@@ -8,6 +8,10 @@ run:
 
 psql:
 	docker-compose exec postgres psql -U postgres -d sanctions
+
+test:
+	docker-compose run --rm --no-deps --entrypoint python -w /src/worker worker \
+		-m unittest discover -s tests -p 'test_*.py'
 
 test-data:
 	docker-compose run --rm worker generate-test-data

@@ -1,3 +1,5 @@
+"""Tests for worker source services."""
+
 import unittest
 
 from services import _seco_is_currently_listed

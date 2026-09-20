@@ -1,3 +1,5 @@
+"""Tests for worker database operations."""
+
 import os
 import unittest
 from unittest.mock import MagicMock, call, patch
